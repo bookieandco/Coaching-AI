@@ -3,6 +3,8 @@ import type { BoxingIntervention } from "./tactical-scenarios";
 
 export interface BoxingAdaptiveObservation {
   observationId: string;
+  fighterId: string;
+  opponentId: string;
   interventionType: BoxingIntervention["type"];
   responseType: string;
   phase?: string;
@@ -87,11 +89,11 @@ export function updateAdaptiveOpponent(
   const rule = { ...DEFAULT_RULE, ...(config.rule ?? {}) };
   const previous = current ?? createInitialAdaptiveState(observation, candidateResponses);
   const exposures = { ...previous.interventionExposures };
-  const exposureKey = observation.interventionType;
+  const exposureKey = `${observation.interventionType}:${observation.phase ?? "any"}:${observation.distance ?? "any"}`;
   const priorExposure = exposures[exposureKey] ?? 0;
   exposures[exposureKey] = priorExposure + 1;
 
-  const responseMap = new Map(previous.responses.map((response) => [response.responseType, response]));
+  const responseMap = new Map(previous.responses.map((response) => [response.responseType, { ...response }]));
   for (const candidate of candidateResponses) {
     if (!responseMap.has(candidate.responseType)) {
       responseMap.set(candidate.responseType, {
@@ -171,8 +173,8 @@ export function createInitialAdaptiveState(
   candidateResponses: Array<{ responseType: string; weight: number; evidenceRefs: EvidenceRef[] }>,
 ): BoxingAdaptiveState {
   return {
-    fighterId: observation.observationId,
-    opponentId: "unknown",
+    fighterId: observation.fighterId,
+    opponentId: observation.opponentId,
     interventionExposures: {},
     responses: candidateResponses
       .map((candidate) => ({
