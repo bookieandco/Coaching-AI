@@ -3,7 +3,6 @@ import type { TennisMatchState } from "./index";
 import type { TennisCounterfactualState } from "./counterfactual";
 import type { TennisTacticalScenario } from "./tactical-scenarios";
 import { applyTennisOutcomeTransition, buildHeuristicOutcomeModel } from "./outcome-transition";
-import { enterTiebreakIfRequired } from "./scoring";
 
 export interface TennisSimulationConfig {
   simulationCount: number;
@@ -61,6 +60,19 @@ function randomUnit(seed: number): number {
   return (x >>> 0) / 4294967296;
 }
 
+function chooseWeighted<T extends { relativeWeight: number }>(seed: number, items: T[]): { item?: T; seed: number } {
+  const next = nextSeed(seed);
+  if (items.length === 0) return { seed: next };
+  const total = items.reduce((sum, item) => sum + Math.max(0, item.relativeWeight), 0);
+  if (total <= 0) return { item: items[0], seed: next };
+  let cursor = randomUnit(next) * total;
+  for (const item of items) {
+    cursor -= Math.max(0, item.relativeWeight);
+    if (cursor < 0) return { item, seed: next };
+  }
+  return { item: items[items.length - 1], seed: next };
+}
+
 function chooseWinner(seed: number, serverId: string, receiverId: string, serverWeight: number, receiverWeight: number): { winnerId: string; seed: number } {
   const next = nextSeed(seed);
   const total = Math.max(0, serverWeight) + Math.max(0, receiverWeight);
@@ -88,8 +100,8 @@ function terminalClass(result: { gameWon: boolean; setWon: boolean; matchWon: bo
 }
 
 /**
- * B-26 runs reproducible point-by-point trajectories. Outcome weights remain
- * heuristic sampling weights, never calibrated probabilities.
+ * B-28 extends B-26 with adaptive response-weight sampling.
+ * Relative weights are search/simulation weights, never calibrated probabilities.
  */
 export function simulateTennisScenario(
   counterfactual: TennisCounterfactualState,
@@ -104,24 +116,20 @@ export function simulateTennisScenario(
   for (let i = 0; i < count; i += 1) {
     let state = counterfactual.state;
     let seed = branchSeed(config.seed, i);
-    const selected = scenario.opponentResponses.length > 0
-      ? scenario.opponentResponses[Math.floor(randomUnit(nextSeed(seed)) * scenario.opponentResponses.length)]
-      : undefined;
-    if (selected) seed = nextSeed(seed);
+    const selectedResult = chooseWeighted(seed, scenario.opponentResponses);
+    const selected = selectedResult.item;
+    seed = selectedResult.seed;
     const responseType = selected?.type;
     const counterType = selected ? scenario.counterPaths.find((c) => c.responseId === selected.responseId)?.type : undefined;
-    const serverId = state.attributes.serverParticipantId ?? scenario.serverParticipantId ?? state.participants[0]?.participantId;
-    const receiverId = state.attributes.receiverParticipantId ?? scenario.receiverParticipantId ?? state.participants.find((p) => p.participantId !== serverId)?.participantId;
     const history: TennisSimulationStep[] = [];
     let terminal: TennisSimulationTrajectory["terminalClass"] = "continuation";
 
-    if (!serverId || !receiverId) {
-      trajectories.push({ trajectoryId: `${scenario.scenarioId}:trajectory:${i + 1}`, scenarioId: scenario.scenarioId, seed, steps: 0, terminalClass: terminal, responseType, counterType, finalState: state, stepHistory: history });
-      terminalCounts[terminal] = (terminalCounts[terminal] ?? 0) + 1;
-      continue;
-    }
-
     for (let step = 1; step <= maxSteps; step += 1) {
+      const ids = state.participants.map((p) => p.participantId);
+      const serverId = state.attributes.serverParticipantId ?? scenario.serverParticipantId ?? ids[0];
+      const receiverId = state.attributes.receiverParticipantId ?? scenario.receiverParticipantId ?? ids.find((id) => id !== serverId);
+      if (!serverId || !receiverId || serverId === receiverId) break;
+
       const edge = scenario.matchupContext.serveReturnEdge.advantage;
       const uncertainty = Math.min(1, scenario.matchupContext.serveReturnEdge.uncertainty + (selected?.uncertainty ?? 0) * 0.25);
       const model = buildHeuristicOutcomeModel(edge, uncertainty, scenario.evidenceRefs);
@@ -132,9 +140,11 @@ export function simulateTennisScenario(
       history.push({ step, winnerParticipantId: choice.winnerId, transitionLabel: transition.transitionLabel, gameWon: transition.gameWon, setWon: transition.setWon, matchWon: transition.matchWon, stateVersion: state.stateVersion });
       terminal = terminalClass(transition);
       if (transition.matchWon || transition.setWon) break;
-      if (transition.gameWon) state = enterTiebreakIfRequired(state);
       if (transition.gameWon) {
-        state = swapServer(state);
+        // The scoring engine enters a 6-6 tiebreak itself. Do not perform a
+        // normal game-service swap on the transition that starts that tiebreak.
+        const enteredTiebreak = Boolean(state.attributes.currentSetTiebreak);
+        if (!enteredTiebreak) state = swapServer(state);
       }
     }
 
@@ -148,7 +158,7 @@ export function simulateTennisScenario(
     trajectories,
     terminalCounts,
     provenance: {
-      engineVersion: "tennis-deterministic-simulation-v2",
+      engineVersion: "tennis-deterministic-simulation-v3",
       modelVersion: config.modelVersion ?? "tennis-simulation-model-v1",
       seed: config.seed,
       simulationCount: count,
