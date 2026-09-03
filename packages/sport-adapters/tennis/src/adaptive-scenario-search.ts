@@ -19,6 +19,7 @@ export interface TennisScenarioSearchResult { population:TennisScenarioPopulatio
 export const TENNIS_SCENARIO_SEARCH_ENGINE="tennis-adaptive-scenario-search-v3";
 export const TENNIS_SCENARIO_OBJECTIVES:TennisScenarioObjective[]=["win_path_support","failure_avoidance","robustness","evidence_strength","tactical_diversity"];
 const clamp=(v:number)=>Math.max(0,Math.min(1,v));
+const weightClamp=(v:number)=>Math.max(0.05,Math.min(4,v));
 const score=(c:TennisScenarioCandidate,o:TennisScenarioObjective)=>c.scores.find(s=>s.objective===o)?.value??0;
 const dominates=(a:TennisScenarioCandidate,b:TennisScenarioCandidate)=>{let strict=false;for(const o of TENNIS_SCENARIO_OBJECTIVES){const x=score(a,o),y=score(b,o);if(x<y)return false;if(x>y)strict=true;}return strict;};
 export function paretoFront(cs:TennisScenarioCandidate[]):TennisScenarioCandidate[]{return cs.filter((c,i)=>cs.every((o,j)=>i===j||!dominates(o,c)));}
@@ -41,7 +42,7 @@ function candidateFromScenario(s:TennisTacticalScenario,input:TennisScenarioSear
 /** B-30 constrained variation: only existing response weights are perturbed. No new evidence or player/opponent facts are invented. */
 export function varyTennisScenario(parent:TennisScenarioCandidate,variant:number,generation:number):TennisTacticalScenario{
  const factor=variant%2===0?1.15:0.87;const scenarioId=`${parent.scenario.scenarioId}:g${generation}:v${variant+1}`;const intervention={...parent.scenario.intervention,interventionId:`${scenarioId}:intervention`};
- const responses:TennisOpponentResponse[]=parent.scenario.opponentResponses.map((r,i)=>({...r,responseId:`${intervention.interventionId}:response:${r.type}`,relativeWeight:clamp(Math.max(0.05,Math.min(4,r.relativeWeight*(i===variant%Math.max(1,parent.scenario.opponentResponses.length)?factor:1/factor))))*4}));
+ const responses:TennisOpponentResponse[]=parent.scenario.opponentResponses.map((r,i)=>({...r,responseId:`${intervention.interventionId}:response:${r.type}`,relativeWeight:weightClamp(r.relativeWeight*(i===variant%Math.max(1,parent.scenario.opponentResponses.length)?factor:1/factor))}));
  const responseIds=new Set(responses.map(r=>r.responseId));const counters=parent.scenario.counterPaths.map(c=>({...c,counterId:`${intervention.interventionId}:counter:${c.type}`,responseId:`${intervention.interventionId}:response:${c.responseId.split(":").pop()}`})).filter(c=>responseIds.has(c.responseId));
  return{...parent.scenario,scenarioId,intervention,opponentResponses:responses,counterPaths:counters,provenance:{...parent.scenario.provenance,engineVersion:"tennis-tactical-scenarios-v3"}};
 }
@@ -54,4 +55,4 @@ export function searchTennisScenarioPopulation(input:TennisScenarioSearchInput,c
  const frontier=paretoFront(finalPopulation).sort((a,b)=>a.scenario.scenarioId.localeCompare(b.scenario.scenarioId));const elite=preserveElite(finalPopulation,Math.min(config.eliteCount,finalPopulation.length));const signatures=new Set(finalPopulation.map(scenarioSignature));const refs=uniqueRefs([...input.state.evidenceRefs,...input.matchup.evidenceRefs,...finalPopulation.flatMap(c=>c.scenario.evidenceRefs)]);
  return{population:{generation:Math.max(0,generations-1),candidates:finalPopulation,eliteScenarioIds:elite.map(c=>c.scenario.scenarioId),diversityScore:finalPopulation.length?clamp(signatures.size/finalPopulation.length):0},frontier,elite,provenance:{engineVersion:TENNIS_SCENARIO_SEARCH_ENGINE,seed:config.seed,modelVersion:config.modelVersion??"tennis-scenario-search-model-v2",generationCount:generations,simulationCount:Math.max(0,Math.floor(config.simulationCount)),maxSteps:Math.max(1,Math.floor(config.maxSteps)),evidenceRefs:refs}};
 }
-export function describeTennisScenarioSearch():TennisScenarioSearchResult{return{population:{generation:0,candidates:[],eliteScenarioIds:[],diversityScore:0},frontier:[],elite:[],provenance:{engineVersion:TENNIS_SCENARIO_SEARCH_ENGINE,seed:0,modelVersion:"tennis-scenario-search-model-v2",generationCount:0,simulationCount:0,maxSteps:0,evidenceRefs:[]}};}
+export function describeTennisScenarioSearch():TennisScenarioSearchResult{return{population:{generation:0,candidates:[],eliteScenarioIds:[],diversityScore:0},frontier:[],elite:[],provenance:{engineVersion:TENNIS_SCENARIO_SEARCH_ENGINE,seed:0,modelVersion:"tennis-scenario-search-model-v2",generationCount:0,simulationCount:0,maxSteps:0,evidenceRefs:[]}};
