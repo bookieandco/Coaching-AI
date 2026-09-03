@@ -36,7 +36,7 @@ function finishSet(state: TennisMatchState, winnerId: string, loserId: string, w
     gamesLoser: loserGames,
   }];
   const nextWinner = { ...winner, points: 0, games: 0, sets: winner.sets + 1, tiebreakPoints: 0 };
-  const nextLoser = { ...loser, points: 0, games: 0, tiebreakPoints: 0 };
+  const nextLoser = { ...loser, points: 0, games: 0, sets: loser.sets, tiebreakPoints: 0 };
   const next = withScore(withScore(setTiebreakFlag(state, false), winnerId, nextWinner), loserId, nextLoser);
   return {
     ...next,
@@ -54,10 +54,15 @@ function maybeFinishSet(state: TennisMatchState, winnerId: string, loserId: stri
   const gameWon = winner.games !== loser.games && winner.games >= 6 && winner.games - loser.games >= 2;
   const tiebreakWon = state.attributes.currentSetTiebreak === true && winner.games === 7;
   if (!gameWon && !tiebreakWon) return { state, gameWon: false, setWon: false, matchWon: false };
-
   const finished = finishSet(state, winnerId, loserId, winner.games, loser.games);
   const matchWon = scoreFor(finished, winnerId).sets >= targetSets(state);
   return { state: finished, gameWon: true, setWon: true, matchWon, winnerParticipantId: matchWon ? winnerId : undefined };
+}
+
+function completeGameOrEnterTiebreak(state: TennisMatchState, winnerId: string, loserId: string): TennisPointTransition {
+  const withTiebreak = enterTiebreakIfRequired(state);
+  if (withTiebreak.attributes.currentSetTiebreak) return { state: withTiebreak, gameWon: true, setWon: false, matchWon: false };
+  return maybeFinishSet(withTiebreak, winnerId, loserId);
 }
 
 export function applyTennisPoint(state: TennisMatchState, winnerId: string): TennisPointTransition {
@@ -87,7 +92,7 @@ export function applyTennisPoint(state: TennisMatchState, winnerId: string): Ten
     if (advantage === winnerId) {
       winner.games += 1; winner.points = 0; loser.points = 0;
       const next = withScore(withScore({ ...state, attributes: { ...state.attributes, advantageParticipantId: undefined } }, winnerId, winner), loserId, loser);
-      return maybeFinishSet(next, winnerId, loserId);
+      return completeGameOrEnterTiebreak(next, winnerId, loserId);
     }
     if (advantage === loserId) {
       const next = { ...state, attributes: { ...state.attributes, advantageParticipantId: undefined } };
@@ -99,7 +104,7 @@ export function applyTennisPoint(state: TennisMatchState, winnerId: string): Ten
   if (advantage === winnerId) {
     winner.games += 1; winner.points = 0; loser.points = 0;
     const next = withScore(withScore({ ...state, attributes: { ...state.attributes, advantageParticipantId: undefined } }, winnerId, winner), loserId, loser);
-    return maybeFinishSet(next, winnerId, loserId);
+    return completeGameOrEnterTiebreak(next, winnerId, loserId);
   }
 
   if (advantage === loserId) {
@@ -110,14 +115,12 @@ export function applyTennisPoint(state: TennisMatchState, winnerId: string): Ten
   if (winner.points < 40) {
     winner.points = winner.points === 0 ? 15 : winner.points === 15 ? 30 : 40;
   } else if (loser.points < 40) {
-    // Winner already has 40; the next point closes the game unless the opponent is also at 40.
     winner.games += 1; winner.points = 0; loser.points = 0;
     const next = withScore(withScore(state, winnerId, winner), loserId, loser);
-    return maybeFinishSet(next, winnerId, loserId);
+    return completeGameOrEnterTiebreak(next, winnerId, loserId);
   }
 
   const next = withScore(withScore(state, winnerId, winner), loserId, loser);
-  if (winner.points === 40 && loser.points === 40) return { state: next, gameWon: false, setWon: false, matchWon: false };
   return { state: next, gameWon: false, setWon: false, matchWon: false };
 }
 
@@ -126,6 +129,8 @@ export function enterTiebreakIfRequired(state: TennisMatchState): TennisMatchSta
   if (ids.length !== 2) return state;
   const a = scoreFor(state, ids[0]);
   const b = scoreFor(state, ids[1]);
-  if (a.games === 6 && b.games === 6) return setTiebreakFlag(state, true);
+  if (a.games === 6 && b.games === 6) {
+    return { ...setTiebreakFlag(state, true), attributes: { ...state.attributes, advantageParticipantId: undefined } };
+  }
   return state;
 }
