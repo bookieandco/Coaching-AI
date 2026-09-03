@@ -1,6 +1,7 @@
 import type { EvidenceRef } from "@coaching-ai/sports-core";
 import type { TennisMatchState } from "./index";
 import type { TennisMatchupModel } from "./matchup-intelligence";
+import { adaptiveResponsesForScenario, type TennisAdaptiveState } from "./adaptive-opponent";
 
 export type TennisTacticalInterventionType =
   | "serve_direction_change"
@@ -72,6 +73,7 @@ function response(
 export function generateTennisTacticalScenarios(
   state: TennisMatchState,
   matchup: TennisMatchupModel,
+  adaptiveState?: TennisAdaptiveState,
 ): TennisTacticalScenario[] {
   const actor = matchup.serverParticipantId;
   const refs = [...new Set(matchup.evidenceRefs.map((r) => r.evidenceId))]
@@ -79,7 +81,7 @@ export function generateTennisTacticalScenarios(
     .filter(Boolean);
 
   const seeds: Array<Omit<TennisTacticalIntervention, "interventionId">> = [
-    { type: "serve_direction_change", actorParticipantId: actor, objective: "test a different serve lane against the current return matchup", assumptions: ["serve-direction change is technically available"] , evidenceRefs: refs },
+    { type: "serve_direction_change", actorParticipantId: actor, objective: "test a different serve lane against the current return matchup", assumptions: ["serve-direction change is technically available"], evidenceRefs: refs },
     { type: "serve_speed_change", actorParticipantId: actor, objective: "test a pace change while preserving serve intent", assumptions: ["pace can be varied without changing the target objective"], evidenceRefs: refs },
     { type: "second_serve_shape_change", actorParticipantId: actor, objective: "test a safer or differently shaped second-serve pattern", assumptions: ["second-serve variation is available"], evidenceRefs: refs },
     { type: "return_position_change", actorParticipantId: matchup.receiverParticipantId, objective: "test a different return position", assumptions: ["receiver can alter starting position"], evidenceRefs: refs },
@@ -101,7 +103,7 @@ export function generateTennisTacticalScenarios(
         ? ["serve_direction_change", "serve_speed_change", "extend_rally"]
         : ["match_tempo", "change_court_position", "attack_earlier"];
     const weights = [1, 0.8, 0.6];
-    const opponentResponses = responseTypes.map((type, i) => response(
+    const baseResponses = responseTypes.map((type, i) => response(
       intervention,
       type,
       `hypothesized opponent response to ${seed.type}`,
@@ -109,12 +111,13 @@ export function generateTennisTacticalScenarios(
       baseUncertainty,
       refs,
     ));
+    const opponentResponses = adaptiveResponsesForScenario(baseResponses, adaptiveState);
     const counterPaths = opponentResponses.map((r) => ({
       counterId: `${intervention.interventionId}:counter:${r.responseId.split(":").pop()}`,
       responseId: r.responseId,
       type: `counter_${r.type}`,
       rationale: `hypothesized counter-path after ${r.type}`,
-      evidenceRefs: refs,
+      evidenceRefs: r.evidenceRefs,
     }));
     return {
       scenarioId: intervention.interventionId,
@@ -126,7 +129,7 @@ export function generateTennisTacticalScenarios(
       counterPaths,
       matchupContext: matchup,
       evidenceRefs: refs,
-      provenance: { engineVersion: "tennis-tactical-scenarios-v1", source: "hypothetical" },
+      provenance: { engineVersion: "tennis-tactical-scenarios-v2", source: "hypothetical" },
     };
   });
 }
