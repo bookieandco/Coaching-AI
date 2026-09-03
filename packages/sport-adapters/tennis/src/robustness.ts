@@ -1,5 +1,6 @@
 import type { EvidenceRef } from "@coaching-ai/sports-core";
 import type { TennisScenarioCandidate } from "./adaptive-scenario-search";
+import type { TennisTacticalScenario, TennisOpponentResponse } from "./tactical-scenarios";
 import type { TennisCounterfactualState } from "./counterfactual";
 import { simulateTennisScenario, type TennisSimulationConfig, type TennisSimulationResult } from "./simulation-kernel";
 import { buildTennisWinPathReport, type TennisWinPathReport } from "./win-path-engine";
@@ -37,9 +38,56 @@ export interface TennisRobustnessReport {
   };
 }
 
-function clamp(value: number): number {
-  return Math.max(0, Math.min(1, value));
+export type TennisPerturbationKind = "response_weight" | "simulation_budget";
+
+export interface TennisPerturbationSpec {
+  perturbationId: string;
+  kind: TennisPerturbationKind;
+  responseType?: string;
+  factor?: number;
+  maxSteps?: number;
+  description: string;
 }
+
+export interface TennisPerturbationSample {
+  perturbation: TennisPerturbationSpec;
+  seed: number;
+  scenario: TennisTacticalScenario;
+  simulation: TennisSimulationResult;
+  winPathReport: TennisWinPathReport;
+}
+
+export interface TennisPerturbationRobustnessConfig {
+  seed: number;
+  simulationCount: number;
+  maxSteps: number;
+  responseWeightMagnitude?: number;
+  testSimulationBudget?: boolean;
+  modelVersion?: string;
+}
+
+export interface TennisPerturbationRobustnessReport {
+  scenarioId: string;
+  baselineWinPathCoverage: number;
+  perturbedWinPathCoverageMean: number;
+  perturbedWinPathCoverageMin: number;
+  perturbedWinPathCoverageMax: number;
+  sensitivity: number;
+  perturbationStability: number;
+  robust: boolean;
+  samples: TennisPerturbationSample[];
+  uncertainty: number;
+  provenance: {
+    engineVersion: string;
+    baseSeed: number;
+    simulationCount: number;
+    maxSteps: number;
+    evidenceRefs: EvidenceRef[];
+  };
+}
+
+const clamp = (value: number): number => Math.max(0, Math.min(1, value));
+const weightClamp = (value: number): number => Math.max(0.05, Math.min(4, value));
 
 function uniqueRefs(refs: EvidenceRef[]): EvidenceRef[] {
   const seen = new Set<string>();
@@ -50,11 +98,54 @@ function uniqueRefs(refs: EvidenceRef[]): EvidenceRef[] {
   });
 }
 
+function perturbResponseWeight(
+  scenario: TennisTacticalScenario,
+  responseType: string,
+  factor: number,
+): TennisTacticalScenario {
+  const scenarioId = `${scenario.scenarioId}:perturb:${responseType}:${factor.toFixed(3)}`;
+  const interventionId = `${scenario.intervention.interventionId}:perturb:${responseType}`;
+  const responses: TennisOpponentResponse[] = scenario.opponentResponses.map((response) => ({
+    ...response,
+    responseId: `${interventionId}:response:${response.type}`,
+    relativeWeight: response.type === responseType
+      ? weightClamp(response.relativeWeight * factor)
+      : response.relativeWeight,
+  }));
+
+  const responseIds = new Set(responses.map((response) => response.responseId));
+  const counters = scenario.counterPaths
+    .map((counter) => ({
+      ...counter,
+      counterId: `${interventionId}:counter:${counter.type}`,
+      responseId: `${interventionId}:response:${counter.responseId.split(":").pop()}`,
+    }))
+    .filter((counter) => responseIds.has(counter.responseId));
+
+  return {
+    ...scenario,
+    scenarioId,
+    intervention: { ...scenario.intervention, interventionId },
+    opponentResponses: responses,
+    counterPaths: counters,
+    provenance: { ...scenario.provenance, engineVersion: "tennis-perturbation-robustness-v1" },
+  };
+}
+
+function perturbSimulationBudget(
+  scenario: TennisTacticalScenario,
+  maxSteps: number,
+): TennisTacticalScenario {
+  return {
+    ...scenario,
+    scenarioId: `${scenario.scenarioId}:budget:${maxSteps}`,
+    provenance: { ...scenario.provenance, engineVersion: "tennis-perturbation-robustness-v1" },
+  };
+}
+
 /**
- * Replays one already-generated scenario from the same counterfactual state
- * under independent deterministic seeds. This measures simulation stability;
- * it does not convert branch frequency into a calibrated probability or
- * recommend a coaching action.
+ * B-31: same counterfactual state + same scenario under independent seeds.
+ * This measures stochastic stability, not calibrated probability or advice.
  */
 export function evaluateTennisScenarioRobustness(
   candidate: TennisScenarioCandidate,
@@ -73,13 +164,7 @@ export function evaluateTennisScenarioRobustness(
       robust: false,
       samples: [],
       uncertainty: 1,
-      provenance: {
-        engineVersion: "tennis-scenario-robustness-v2",
-        seeds: [],
-        simulationCount: 0,
-        maxSteps: 0,
-        evidenceRefs: candidate.scenario.evidenceRefs,
-      },
+      provenance: { engineVersion: "tennis-scenario-robustness-v2", seeds: [], simulationCount: 0, maxSteps: 0, evidenceRefs: candidate.scenario.evidenceRefs },
     };
   }
 
@@ -93,8 +178,7 @@ export function evaluateTennisScenarioRobustness(
       modelVersion: config.modelVersion,
     };
     const simulation = simulateTennisScenario(counterfactual, candidate.scenario, simulationConfig);
-    const report = buildTennisWinPathReport(candidate.scenario, simulation);
-    samples.push({ seed, simulation, winPathReport: report });
+    samples.push({ seed, simulation, winPathReport: buildTennisWinPathReport(candidate.scenario, simulation) });
   }
 
   const coverages = samples.map((sample) => sample.winPathReport.coverage.winPathCoverage);
@@ -103,7 +187,6 @@ export function evaluateTennisScenarioRobustness(
   const max = coverages.length ? Math.max(...coverages) : 0;
   const range = max - min;
   const stability = clamp(1 - range);
-  const robust = samples.length >= 2 && stability >= 0.8;
   const evidenceRefs = uniqueRefs([
     ...counterfactual.evidenceRefs,
     ...candidate.scenario.evidenceRefs,
@@ -118,7 +201,7 @@ export function evaluateTennisScenarioRobustness(
     winPathCoverageMax: max,
     winPathCoverageRange: range,
     crossSeedStability: stability,
-    robust,
+    robust: samples.length >= 2 && stability >= 0.8,
     samples,
     uncertainty: samples.length >= 2 ? clamp(0.5 + range * 0.5) : 1,
     provenance: {
@@ -126,6 +209,98 @@ export function evaluateTennisScenarioRobustness(
       seeds,
       simulationCount: Math.max(1, Math.floor(config.simulationCount)),
       maxSteps: Math.max(1, Math.floor(config.maxSteps)),
+      evidenceRefs,
+    },
+  };
+}
+
+/**
+ * B-32: perturb only hypothetical simulation assumptions. Observed facts and
+ * the canonical match state are never mutated. Each sample is independently
+ * replayable from the same counterfactual state.
+ */
+export function evaluateTennisScenarioPerturbationRobustness(
+  candidate: TennisScenarioCandidate,
+  counterfactual: TennisCounterfactualState,
+  config: TennisPerturbationRobustnessConfig,
+): TennisPerturbationRobustnessReport {
+  const baseline = candidate.winPathReport?.coverage.winPathCoverage ?? 0;
+  if (!candidate.valid) {
+    return {
+      scenarioId: candidate.scenario.scenarioId,
+      baselineWinPathCoverage: baseline,
+      perturbedWinPathCoverageMean: 0,
+      perturbedWinPathCoverageMin: 0,
+      perturbedWinPathCoverageMax: 0,
+      sensitivity: 1,
+      perturbationStability: 0,
+      robust: false,
+      samples: [],
+      uncertainty: 1,
+      provenance: { engineVersion: "tennis-perturbation-robustness-v1", baseSeed: config.seed, simulationCount: 0, maxSteps: 0, evidenceRefs: candidate.scenario.evidenceRefs },
+    };
+  }
+
+  const magnitude = clamp(config.responseWeightMagnitude ?? 0.1);
+  const specs: TennisPerturbationSpec[] = [];
+  for (const response of candidate.scenario.opponentResponses) {
+    specs.push({ perturbationId: `${response.type}:down`, kind: "response_weight", responseType: response.type, factor: 1 - magnitude, description: `reduce ${response.type} response weight by ${Math.round(magnitude * 100)}%` });
+    specs.push({ perturbationId: `${response.type}:up`, kind: "response_weight", responseType: response.type, factor: 1 + magnitude, description: `increase ${response.type} response weight by ${Math.round(magnitude * 100)}%` });
+  }
+  if (config.testSimulationBudget) {
+    const baseSteps = Math.max(1, Math.floor(config.maxSteps));
+    specs.push({ perturbationId: "budget:down", kind: "simulation_budget", maxSteps: Math.max(1, Math.floor(baseSteps * 0.8)), description: "reduce simulation horizon by 20%" });
+    specs.push({ perturbationId: "budget:up", kind: "simulation_budget", maxSteps: Math.max(baseSteps + 1, Math.ceil(baseSteps * 1.2)), description: "increase simulation horizon by 20%" });
+  }
+
+  const samples: TennisPerturbationSample[] = [];
+  const baseSimulationCount = Math.max(1, Math.floor(config.simulationCount));
+  const baseMaxSteps = Math.max(1, Math.floor(config.maxSteps));
+  specs.forEach((spec, index) => {
+    const scenario = spec.kind === "response_weight"
+      ? perturbResponseWeight(candidate.scenario, spec.responseType!, spec.factor!)
+      : perturbSimulationBudget(candidate.scenario, spec.maxSteps!);
+    const maxSteps = spec.kind === "simulation_budget" ? spec.maxSteps! : baseMaxSteps;
+    const seed = (config.seed + (index + 1) * 1009) | 0;
+    const simulation = simulateTennisScenario(counterfactual, scenario, {
+      simulationCount: baseSimulationCount,
+      maxSteps,
+      seed,
+      modelVersion: config.modelVersion,
+    });
+    samples.push({ perturbation: spec, seed, scenario, simulation, winPathReport: buildTennisWinPathReport(scenario, simulation) });
+  });
+
+  const coverages = samples.map((sample) => sample.winPathReport.coverage.winPathCoverage);
+  const mean = coverages.length ? coverages.reduce((sum, value) => sum + value, 0) / coverages.length : baseline;
+  const min = coverages.length ? Math.min(...coverages) : baseline;
+  const max = coverages.length ? Math.max(...coverages) : baseline;
+  const sensitivity = coverages.length
+    ? clamp(coverages.reduce((sum, value) => sum + Math.abs(value - baseline), 0) / coverages.length)
+    : 1;
+  const stability = clamp(1 - sensitivity);
+  const evidenceRefs = uniqueRefs([
+    ...counterfactual.evidenceRefs,
+    ...candidate.scenario.evidenceRefs,
+    ...samples.flatMap((sample) => sample.winPathReport.provenance.evidenceRefs),
+  ]);
+
+  return {
+    scenarioId: candidate.scenario.scenarioId,
+    baselineWinPathCoverage: baseline,
+    perturbedWinPathCoverageMean: mean,
+    perturbedWinPathCoverageMin: min,
+    perturbedWinPathCoverageMax: max,
+    sensitivity,
+    perturbationStability: stability,
+    robust: samples.length >= 2 && stability >= 0.8,
+    samples,
+    uncertainty: samples.length >= 2 ? clamp(0.5 + sensitivity * 0.5) : 1,
+    provenance: {
+      engineVersion: "tennis-perturbation-robustness-v1",
+      baseSeed: config.seed,
+      simulationCount: baseSimulationCount,
+      maxSteps: baseMaxSteps,
       evidenceRefs,
     },
   };
