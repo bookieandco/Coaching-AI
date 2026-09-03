@@ -1,5 +1,6 @@
 import type { EvidenceRef } from "@coaching-ai/sports-core";
 import type { TennisScenarioCandidate } from "./adaptive-scenario-search";
+import type { TennisCounterfactualState } from "./counterfactual";
 import { simulateTennisScenario, type TennisSimulationConfig, type TennisSimulationResult } from "./simulation-kernel";
 import { buildTennisWinPathReport, type TennisWinPathReport } from "./win-path-engine";
 
@@ -50,15 +51,17 @@ function uniqueRefs(refs: EvidenceRef[]): EvidenceRef[] {
 }
 
 /**
- * Replays one already-generated scenario under independent deterministic seeds.
- * This measures stability of the simulated branch; it does not convert branch
- * frequency into a calibrated probability or recommend a coaching action.
+ * Replays one already-generated scenario from the same counterfactual state
+ * under independent deterministic seeds. This measures simulation stability;
+ * it does not convert branch frequency into a calibrated probability or
+ * recommend a coaching action.
  */
 export function evaluateTennisScenarioRobustness(
   candidate: TennisScenarioCandidate,
+  counterfactual: TennisCounterfactualState,
   config: TennisRobustnessConfig,
 ): TennisRobustnessReport {
-  if (!candidate.valid || !candidate.simulation) {
+  if (!candidate.valid) {
     return {
       scenarioId: candidate.scenario.scenarioId,
       sampleCount: 0,
@@ -71,7 +74,7 @@ export function evaluateTennisScenarioRobustness(
       samples: [],
       uncertainty: 1,
       provenance: {
-        engineVersion: "tennis-scenario-robustness-v1",
+        engineVersion: "tennis-scenario-robustness-v2",
         seeds: [],
         simulationCount: 0,
         maxSteps: 0,
@@ -89,23 +92,7 @@ export function evaluateTennisScenarioRobustness(
       seed,
       modelVersion: config.modelVersion,
     };
-    const simulation = simulateTennisScenario(
-      candidate.simulation.trajectories[0]?.finalState
-        ? {
-            ...candidate.simulation.trajectories[0].finalState,
-            scenarioId: candidate.scenario.scenarioId,
-            sourceStateVersion: candidate.simulation.sourceStateVersion,
-            stateVersion: candidate.simulation.trajectories[0].finalState.stateVersion,
-            delta: {
-              changedPaths: [],
-              tacticalMode: candidate.simulation.trajectories[0].finalState.attributes.tacticalMode ?? {},
-            },
-            evidenceRefs: candidate.scenario.evidenceRefs,
-            provenance: { engineVersion: "tennis-counterfactual-v1", source: "hypothetical" },
-          },
-      candidate.scenario,
-      simulationConfig,
-    );
+    const simulation = simulateTennisScenario(counterfactual, candidate.scenario, simulationConfig);
     const report = buildTennisWinPathReport(candidate.scenario, simulation);
     samples.push({ seed, simulation, winPathReport: report });
   }
@@ -118,6 +105,7 @@ export function evaluateTennisScenarioRobustness(
   const stability = clamp(1 - range);
   const robust = samples.length >= 2 && stability >= 0.8;
   const evidenceRefs = uniqueRefs([
+    ...counterfactual.evidenceRefs,
     ...candidate.scenario.evidenceRefs,
     ...samples.flatMap((sample) => sample.winPathReport.provenance.evidenceRefs),
   ]);
@@ -134,7 +122,7 @@ export function evaluateTennisScenarioRobustness(
     samples,
     uncertainty: samples.length >= 2 ? clamp(0.5 + range * 0.5) : 1,
     provenance: {
-      engineVersion: "tennis-scenario-robustness-v1",
+      engineVersion: "tennis-scenario-robustness-v2",
       seeds,
       simulationCount: Math.max(1, Math.floor(config.simulationCount)),
       maxSteps: Math.max(1, Math.floor(config.maxSteps)),
