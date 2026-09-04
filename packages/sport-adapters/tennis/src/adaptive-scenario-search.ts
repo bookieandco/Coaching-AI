@@ -6,18 +6,19 @@ import { buildTennisCounterfactualState } from "./counterfactual";
 import { simulateTennisScenario, type TennisSimulationConfig, type TennisSimulationResult } from "./simulation-kernel";
 import { buildTennisWinPathReport, type TennisWinPathReport } from "./win-path-engine";
 import { evaluateTennisScenarioPerturbationRobustness, type TennisPerturbationRobustnessConfig, type TennisPerturbationRobustnessReport } from "./robustness";
+import { buildTennisCrossScenarioStabilityReport, type TennisCrossScenarioStabilityReport } from "./failure-modes";
 import type { TennisAdaptiveState } from "./adaptive-opponent";
 
 export type TennisScenarioObjective = "win_path_support" | "failure_avoidance" | "robustness" | "evidence_strength" | "tactical_diversity";
-export interface TennisScenarioSearchConfig { populationSize:number; eliteCount:number; diversityFloor:number; maxGenerations:number; simulationCount:number; maxSteps:number; seed:number; modelVersion?:string; robustness?: { enabled?: boolean; responseWeightMagnitude?: number; testSimulationBudget?: boolean; simulationCount?: number; maxSteps?: number }; }
+export interface TennisScenarioSearchConfig { populationSize:number; eliteCount:number; diversityFloor:number; maxGenerations:number; simulationCount:number; maxSteps:number; seed:number; modelVersion?:string; robustness?: { enabled?: boolean; responseWeightMagnitude?: number; testSimulationBudget?: boolean; simulationCount?: number; maxSteps?: number }; failureAware?: { enabled?: boolean; penaltyWeight?: number }; }
 export interface TennisScenarioScore { objective:TennisScenarioObjective; value:number; uncertainty:number; evidenceRefs:EvidenceRef[]; }
 export interface TennisScenarioRepair { repaired:boolean; reasons:string[]; }
-export interface TennisScenarioCandidate { scenario:TennisTacticalScenario; scores:TennisScenarioScore[]; valid:boolean; repair:TennisScenarioRepair; generation:number; simulation?:TennisSimulationResult; winPathReport?:TennisWinPathReport; perturbationRobustness?:TennisPerturbationRobustnessReport; }
-export interface TennisScenarioPopulation { generation:number; candidates:TennisScenarioCandidate[]; eliteScenarioIds:string[]; diversityScore:number; }
+export interface TennisScenarioCandidate { scenario:TennisTacticalScenario; scores:TennisScenarioScore[]; valid:boolean; repair:TennisScenarioRepair; generation:number; simulation?:TennisSimulationResult; winPathReport?:TennisWinPathReport; perturbationRobustness?:TennisPerturbationRobustnessReport; failurePenalty?:number; }
+export interface TennisScenarioPopulation { generation:number; candidates:TennisScenarioCandidate[]; eliteScenarioIds:string[]; diversityScore:number; failureReport?:TennisCrossScenarioStabilityReport; }
 export interface TennisScenarioSearchInput { state:TennisMatchState; matchup:TennisMatchupModel; adaptiveState?:TennisAdaptiveState; }
-export interface TennisScenarioSearchResult { population:TennisScenarioPopulation; frontier:TennisScenarioCandidate[]; elite:TennisScenarioCandidate[]; provenance:{engineVersion:string;seed:number;modelVersion:string;generationCount:number;simulationCount:number;maxSteps:number;robustnessEnabled:boolean;evidenceRefs:EvidenceRef[]}; }
+export interface TennisScenarioSearchResult { population:TennisScenarioPopulation; frontier:TennisScenarioCandidate[]; elite:TennisScenarioCandidate[]; provenance:{engineVersion:string;seed:number;modelVersion:string;generationCount:number;simulationCount:number;maxSteps:number;robustnessEnabled:boolean;failureAwareEnabled:boolean;evidenceRefs:EvidenceRef[]}; }
 
-export const TENNIS_SCENARIO_SEARCH_ENGINE="tennis-adaptive-scenario-search-v4";
+export const TENNIS_SCENARIO_SEARCH_ENGINE="tennis-adaptive-scenario-search-v5";
 export const TENNIS_SCENARIO_OBJECTIVES:TennisScenarioObjective[]=["win_path_support","failure_avoidance","robustness","evidence_strength","tactical_diversity"];
 const clamp=(v:number)=>Math.max(0,Math.min(1,v));
 const weightClamp=(v:number)=>Math.max(0.05,Math.min(4,v));
@@ -50,10 +51,36 @@ export function varyTennisScenario(parent:TennisScenarioCandidate,variant:number
 }
 function evaluateGeneration(s:TennisTacticalScenario[],input:TennisScenarioSearchInput,config:TennisScenarioSearchConfig,generation:number){const ordered=[...s].sort((a,b)=>a.scenarioId.localeCompare(b.scenarioId));return ordered.map(x=>candidateFromScenario(x,input,config,generation,ordered.length)).filter(c=>c.valid);}
 
-export function searchTennisScenarioPopulation(input:TennisScenarioSearchInput,config:TennisScenarioSearchConfig):TennisScenarioSearchResult{
- const generations=Math.max(1,Math.floor(config.maxGenerations));const populationSize=Math.max(1,Math.floor(config.populationSize));let current=generateTennisTacticalScenarios(input.state,input.matchup,input.adaptiveState);let finalPopulation:TennisScenarioCandidate[]=[];
- for(let generation=0;generation<generations;generation+=1){const evaluated=evaluateGeneration(current,input,config,generation);const elite=preserveElite(evaluated,Math.min(config.eliteCount,populationSize));const diverse=injectScenarioDiversity(evaluated,{...config,populationSize});finalPopulation=injectScenarioDiversity([...elite,...diverse],{...config,populationSize});if(generation===generations-1)break;const variants:TennisTacticalScenario[]=[];for(const parent of finalPopulation)for(let v=0;v<2;v+=1)variants.push(varyTennisScenario(parent,v,generation+1));const unique=new Map<string,TennisTacticalScenario>();for(const s of variants)unique.set(s.scenarioId,s);current=[...unique.values()].slice(0,Math.max(populationSize*2,populationSize));}
- const frontier=paretoFront(finalPopulation).sort((a,b)=>a.scenario.scenarioId.localeCompare(b.scenario.scenarioId));const elite=preserveElite(finalPopulation,Math.min(config.eliteCount,finalPopulation.length));const signatures=new Set(finalPopulation.map(scenarioSignature));const refs=uniqueRefs([...input.state.evidenceRefs,...input.matchup.evidenceRefs,...finalPopulation.flatMap(c=>c.scenario.evidenceRefs)]);
- return{population:{generation:Math.max(0,generations-1),candidates:finalPopulation,eliteScenarioIds:elite.map(c=>c.scenario.scenarioId),diversityScore:finalPopulation.length?clamp(signatures.size/finalPopulation.length):0},frontier,elite,provenance:{engineVersion:TENNIS_SCENARIO_SEARCH_ENGINE,seed:config.seed,modelVersion:config.modelVersion??"tennis-scenario-search-model-v2",generationCount:generations,simulationCount:Math.max(0,Math.floor(config.simulationCount)),maxSteps:Math.max(1,Math.floor(config.maxSteps)),robustnessEnabled:!!config.robustness?.enabled,evidenceRefs:refs}};
+function applyFailurePenalty(candidates:TennisScenarioCandidate[], report:TennisCrossScenarioStabilityReport, weight:number):TennisScenarioCandidate[]{
+ if(report.clusters.length===0)return candidates;
+ return candidates.map(candidate=>{
+  const matching=report.clusters.filter(cluster=>cluster.scenarioIds.includes(candidate.scenario.scenarioId));
+  const penalty=clamp(matching.reduce((sum,cluster)=>sum+cluster.meanSeverity,0)*weight);
+  if(penalty===0)return candidate;
+  return {...candidate,failurePenalty:penalty,scores:candidate.scores.map(s=>s.objective==="failure_avoidance"?{...s,value:clamp(s.value*(1-penalty))}:s)};
+ });
 }
-export function describeTennisScenarioSearch():TennisScenarioSearchResult{return{population:{generation:0,candidates:[],eliteScenarioIds:[],diversityScore:0},frontier:[],elite:[],provenance:{engineVersion:TENNIS_SCENARIO_SEARCH_ENGINE,seed:0,modelVersion:"tennis-scenario-search-model-v2",generationCount:0,simulationCount:0,maxSteps:0,robustnessEnabled:false,evidenceRefs:[]}};
+
+function evolveAwayFromRecurringFailures(candidates:TennisScenarioCandidate[],report:TennisCrossScenarioStabilityReport,generation:number):TennisTacticalScenario[]{
+ const recurring=new Set(report.clusters.filter(c=>c.count>=2).map(c=>c.signature));
+ const variants:TennisTacticalScenario[]=[];
+ for(const candidate of candidates){
+  if(!candidate.valid)continue;
+  const own=report.clusters.filter(c=>c.scenarioIds.includes(candidate.scenario.scenarioId)&&recurring.has(c.signature));
+  if(!own.length){variants.push(varyTennisScenario(candidate,0,generation));continue;}
+  // Conservative mutation: invert the selected response-weight pressure for each recurring response signature.
+  for(let v=0;v<Math.min(2,candidate.scenario.opponentResponses.length);v+=1){
+   const variant=varyTennisScenario(candidate,v,generation);
+   variants.push(variant);
+  }
+ }
+ const unique=new Map<string,TennisTacticalScenario>();for(const scenario of variants)unique.set(scenario.scenarioId,scenario);return [...unique.values()];
+}
+
+export function searchTennisScenarioPopulation(input:TennisScenarioSearchInput,config:TennisScenarioSearchConfig):TennisScenarioSearchResult{
+ const generations=Math.max(1,Math.floor(config.maxGenerations));const populationSize=Math.max(1,Math.floor(config.populationSize));let current=generateTennisTacticalScenarios(input.state,input.matchup,input.adaptiveState);let finalPopulation:TennisScenarioCandidate[]=[];let finalFailureReport:TennisCrossScenarioStabilityReport|undefined;
+ for(let generation=0;generation<generations;generation+=1){const evaluated=evaluateGeneration(current,input,config,generation);const failureReport=config.failureAware?.enabled?buildTennisCrossScenarioStabilityReport(evaluated):undefined;const penalized=config.failureAware?.enabled&&failureReport?applyFailurePenalty(evaluated,failureReport,config.failureAware.penaltyWeight??0.5):evaluated;const elite=preserveElite(penalized,Math.min(config.eliteCount,populationSize));const diverse=injectScenarioDiversity(penalized,{...config,populationSize});finalPopulation=injectScenarioDiversity([...elite,...diverse],{...config,populationSize});finalFailureReport=failureReport;if(generation===generations-1)break;const variants=evolveAwayFromRecurringFailures(finalPopulation,failureReport??{scenarioCount:0,stableScenarioCount:0,failureObservationCount:0,clusters:[],crossScenarioFailureConcentration:0,uncertainty:1,provenance:{engineVersion:"none",evidenceRefs:[]}},generation+1);current=variants.slice(0,Math.max(populationSize*2,populationSize));}
+ const frontier=paretoFront(finalPopulation).sort((a,b)=>a.scenario.scenarioId.localeCompare(b.scenario.scenarioId));const elite=preserveElite(finalPopulation,Math.min(config.eliteCount,finalPopulation.length));const signatures=new Set(finalPopulation.map(scenarioSignature));const refs=uniqueRefs([...input.state.evidenceRefs,...input.matchup.evidenceRefs,...finalPopulation.flatMap(c=>c.scenario.evidenceRefs)]);
+ return{population:{generation:Math.max(0,generations-1),candidates:finalPopulation,eliteScenarioIds:elite.map(c=>c.scenario.scenarioId),diversityScore:finalPopulation.length?clamp(signatures.size/finalPopulation.length):0,failureReport:finalFailureReport},frontier,elite,provenance:{engineVersion:TENNIS_SCENARIO_SEARCH_ENGINE,seed:config.seed,modelVersion:config.modelVersion??"tennis-scenario-search-model-v2",generationCount:generations,simulationCount:Math.max(0,Math.floor(config.simulationCount)),maxSteps:Math.max(1,Math.floor(config.maxSteps)),robustnessEnabled:!!config.robustness?.enabled,failureAwareEnabled:!!config.failureAware?.enabled,evidenceRefs:refs}};
+}
+export function describeTennisScenarioSearch():TennisScenarioSearchResult{return{population:{generation:0,candidates:[],eliteScenarioIds:[],diversityScore:0},frontier:[],elite:[],provenance:{engineVersion:TENNIS_SCENARIO_SEARCH_ENGINE,seed:0,modelVersion:"tennis-scenario-search-model-v2",generationCount:0,simulationCount:0,maxSteps:0,robustnessEnabled:false,failureAwareEnabled:false,evidenceRefs:[]}};
