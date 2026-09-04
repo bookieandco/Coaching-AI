@@ -15,7 +15,6 @@ export type SportCode =
   | "other";
 
 export type Id<T extends string> = string & { readonly __brand: T };
-
 export type GameId = Id<"GameId">;
 export type TeamId = Id<"TeamId">;
 export type PlayerId = Id<"PlayerId">;
@@ -191,3 +190,22 @@ export interface SportAdapter {
   controlState(state: GameState): ControlState;
   isTerminal(state: GameState): TerminalResult;
 }
+
+export type {
+  CoachingEvidenceLabel,
+  CoachingEvidenceLevel,
+  CoachingEstimate,
+  HierarchicalEvidence,
+  ConfidenceCalibrationRecord,
+  ConfidenceCalibrationSummary,
+  ReferenceMotionComparison,
+  CoachingPolicyEvaluation,
+} from "./coaching-intelligence";
+
+export {
+  estimateBetaBinomial,
+  estimateHierarchicalRate,
+  calibrateConfidence,
+  compareReferenceMotion,
+  buildCoachingPolicyEvaluation,
+} from "./coaching-intelligence";
