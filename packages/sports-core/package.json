@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./coaching-intelligence": "./src/coaching-intelligence.ts"
   }
 }
