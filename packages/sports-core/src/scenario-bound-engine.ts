@@ -1,12 +1,16 @@
 import type { ScenarioEvaluation } from "./scenario-evaluation";
 import type { ScenarioSearchNode } from "./scenario-search-world-model";
 
+export type ScenarioBoundKind = "heuristic" | "certified";
+
 export interface ScenarioBounds {
   lowerBound: number;
   estimate: number;
   upperBound: number;
   confidence: number;
   evidenceCoverage: number;
+  uncertainty: number;
+  kind: ScenarioBoundKind;
 }
 
 export interface ScenarioBoundedNode {
@@ -28,12 +32,10 @@ function evidenceCoverage(evaluation?: ScenarioEvaluation): number {
   return supported / evaluation.dimensions.length;
 }
 
-/**
- * Produces search bounds from existing evidence, without pretending that a
- * sports outcome is mathematically certified. Bounds are search heuristics
- * unless a downstream verifier explicitly supplies certified intervals.
- */
-export function boundScenarioNode(node: ScenarioSearchNode): ScenarioBoundedNode {
+export function boundScenarioNode(
+  node: ScenarioSearchNode,
+  options: { kind?: ScenarioBoundKind } = {},
+): ScenarioBoundedNode {
   const estimate = score(node.evaluation);
   const coverage = evidenceCoverage(node.evaluation);
   const confidence = clamp01(node.evaluation?.confidence ?? coverage);
@@ -48,6 +50,8 @@ export function boundScenarioNode(node: ScenarioSearchNode): ScenarioBoundedNode
       upperBound: clamp01(estimate + radius),
       confidence,
       evidenceCoverage: coverage,
+      uncertainty,
+      kind: options.kind ?? "heuristic",
     },
   };
 }
@@ -55,21 +59,26 @@ export function boundScenarioNode(node: ScenarioSearchNode): ScenarioBoundedNode
 export function canPruneForMaximization(
   candidate: ScenarioBoundedNode,
   incumbentLowerBound: number,
+  allowHeuristic = false,
 ): boolean {
+  if (candidate.bounds.kind !== "certified" && !allowHeuristic) return false;
   return candidate.bounds.upperBound <= clamp01(incumbentLowerBound);
 }
 
 export function canPruneForMinimization(
   candidate: ScenarioBoundedNode,
   incumbentUpperBound: number,
+  allowHeuristic = false,
 ): boolean {
+  if (candidate.bounds.kind !== "certified" && !allowHeuristic) return false;
   return candidate.bounds.lowerBound >= clamp01(incumbentUpperBound);
 }
 
-export function rankBoundedNodes(nodes: ScenarioBoundedNode[]): ScenarioBoundedNode[] {
-  return [...nodes].sort((a, b) =>
-    b.bounds.upperBound - a.bounds.upperBound ||
-    b.bounds.confidence - a.bounds.confidence ||
-    a.node.nodeId.localeCompare(b.node.nodeId),
-  );
+export function rankBoundedNodes(nodes: ScenarioBoundedNode[], role: "coach" | "opponent" = "coach"): ScenarioBoundedNode[] {
+  return [...nodes].sort((a, b) => {
+    const primary = role === "coach"
+      ? b.bounds.upperBound - a.bounds.upperBound
+      : a.bounds.lowerBound - b.bounds.lowerBound;
+    return primary || b.bounds.confidence - a.bounds.confidence || a.node.nodeId.localeCompare(b.node.nodeId);
+  });
 }
