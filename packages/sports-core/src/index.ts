@@ -39,3 +39,4 @@ export * from "./scenario-exploration-iteration";
 export * from "./scenario-search-strategy";
 export * from "./scenario-adversarial-search";
 export * from "./adversarial-world-model-integration";
+export * from "./scenario-bound-engine";
