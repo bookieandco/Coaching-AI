@@ -22,18 +22,20 @@ export interface TennisScenarioExplorationServiceConfig {
 
 const clamp = (value: number): number => Math.max(0, Math.min(1, value));
 
-function candidateFromTennisScenario(candidate: ReturnType<typeof searchTennisScenarioPopulation>["frontier"][number]): ScenarioCandidate {
+type TennisScenarioCandidate = ReturnType<typeof searchTennisScenarioPopulation>["frontier"][number];
+
+function candidateFromTennisScenario(candidate: TennisScenarioCandidate): ScenarioCandidate {
   return {
     scenarioId: candidate.scenario.scenarioId,
     title: candidate.scenario.intervention.type,
     intervention: candidate.scenario.intervention.type,
-    assumptions: candidate.scenario.provenance.assumptions ?? [],
+    assumptions: candidate.scenario.intervention.assumptions,
     evidenceRefs: candidate.scenario.evidenceRefs,
   };
 }
 
 function evaluationFromCandidate(
-  candidate: ReturnType<typeof searchTennisScenarioPopulation>["frontier"][number],
+  candidate: TennisScenarioCandidate,
   stateSignature: string,
   seed: number,
 ): ScenarioEvaluation {
@@ -71,7 +73,7 @@ function evaluationFromCandidate(
 }
 
 function simulationFromCandidate(
-  candidate: ReturnType<typeof searchTennisScenarioPopulation>["frontier"][number],
+  candidate: TennisScenarioCandidate,
   seed: number,
 ): ScenarioSimulationResult {
   const outcome = candidate.winPathReport
