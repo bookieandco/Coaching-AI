@@ -7,6 +7,7 @@
     ".": "./src/index.ts",
     "./coaching-intelligence": "./src/coaching-intelligence.ts",
     "./scenario-evaluation": "./src/scenario-evaluation.ts",
-    "./iterative-scenario-exploration": "./src/iterative-scenario-exploration.ts"
+    "./iterative-scenario-exploration": "./src/iterative-scenario-exploration.ts",
+    "./scenario-bound-engine": "./src/scenario-bound-engine.ts"
   }
 }
