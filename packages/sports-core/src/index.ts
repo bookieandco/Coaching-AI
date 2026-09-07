@@ -32,3 +32,4 @@ export * from "./coach-explanation";
 export * from "./coach-command";
 export * from "./evidence-graph";
 export * from "./scenario-evaluation";
+export * from "./scenario-exploration";
