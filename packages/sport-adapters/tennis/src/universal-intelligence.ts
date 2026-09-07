@@ -33,11 +33,7 @@ export interface TennisUniversalIntelligenceResult {
 
 const clamp = (value: number): number => Math.max(0, Math.min(1, value));
 
-function estimate(
-  estimateId: string,
-  feature: TennisFeatureEstimate,
-  evidenceRefs: EvidenceRef[],
-): CoachingEstimate {
+function estimate(estimateId: string, feature: TennisFeatureEstimate, evidenceRefs: EvidenceRef[]): CoachingEstimate {
   return {
     estimateId,
     value: clamp(feature.value),
@@ -50,32 +46,11 @@ function estimate(
   };
 }
 
-function node(
-  nodeId: string,
-  type: EvidenceGraphNode["type"],
-  label: string,
-  confidence: number,
-  uncertainty: number,
-  evidenceRefs: EvidenceRef[],
-): EvidenceGraphNode {
-  return {
-    nodeId,
-    type,
-    label,
-    confidence: clamp(confidence),
-    uncertainty: clamp(uncertainty),
-    evidenceRefs,
-  };
+function node(nodeId: string, type: EvidenceGraphNode["type"], label: string, confidence: number, uncertainty: number, evidenceRefs: EvidenceRef[]): EvidenceGraphNode {
+  return { nodeId, type, label, confidence: clamp(confidence), uncertainty: clamp(uncertainty), evidenceRefs };
 }
 
-function edge(
-  edgeId: string,
-  fromNodeId: string,
-  toNodeId: string,
-  relation: EvidenceGraphEdge["relation"],
-  strength: number,
-  evidenceRefs: EvidenceRef[],
-): EvidenceGraphEdge {
+function edge(edgeId: string, fromNodeId: string, toNodeId: string, relation: EvidenceGraphEdge["relation"], strength: number, evidenceRefs: EvidenceRef[]): EvidenceGraphEdge {
   return { edgeId, fromNodeId, toNodeId, relation, strength: clamp(strength), evidenceRefs };
 }
 
@@ -101,9 +76,7 @@ function profileEstimates(profile: TennisPlayerProfile): CoachingEstimate[] {
   return groups.map(([key, feature]) => estimate(`tennis:${profile.playerId}:${key}`, feature, profile.evidenceRefs));
 }
 
-export function buildTennisUniversalIntelligence(
-  input: TennisUniversalIntelligenceInput,
-): TennisUniversalIntelligenceResult {
+export function buildTennisUniversalIntelligence(input: TennisUniversalIntelligenceInput): TennisUniversalIntelligenceResult {
   const estimates = input.profiles.flatMap(profileEstimates);
   const policyEvaluations = (input.scenarios ?? []).map((scenario) =>
     buildCoachingPolicyEvaluation({
@@ -117,8 +90,7 @@ export function buildTennisUniversalIntelligence(
       },
       uncertainty: clamp(
         scenario.matchupContext.serveReturnEdge.uncertainty +
-        (scenario.opponentResponses.reduce((sum, response) => sum + response.uncertainty, 0) /
-          Math.max(1, scenario.opponentResponses.length)) * 0.5,
+        (scenario.opponentResponses.reduce((sum, response) => sum + response.uncertainty, 0) / Math.max(1, scenario.opponentResponses.length)) * 0.5,
       ),
       evidenceRefs: scenario.evidenceRefs,
     }),
@@ -130,72 +102,30 @@ export function buildTennisUniversalIntelligence(
   for (const estimateItem of estimates) {
     const observationId = `${estimateItem.estimateId}:evidence`;
     nodes.push(
-      node(
-        observationId,
-        "observation",
-        `Evidence for ${estimateItem.estimateId}`,
-        estimateItem.evidenceRefs.length ? 1 : 0,
-        estimateItem.evidenceRefs.length ? 0 : 1,
-        estimateItem.evidenceRefs,
-      ),
-      node(
-        estimateItem.estimateId,
-        "inference",
-        estimateItem.estimateId,
-        1 - estimateItem.uncertainty,
-        estimateItem.uncertainty,
-        estimateItem.evidenceRefs,
-      ),
+      node(observationId, "observation", `Evidence for ${estimateItem.estimateId}`, estimateItem.evidenceRefs.length ? 1 : 0, estimateItem.evidenceRefs.length ? 0 : 1, estimateItem.evidenceRefs),
+      node(estimateItem.estimateId, "inference", estimateItem.estimateId, 1 - estimateItem.uncertainty, estimateItem.uncertainty, estimateItem.evidenceRefs),
     );
-    edges.push(
-      edge(
-        `${observationId}->${estimateItem.estimateId}`,
-        observationId,
-        estimateItem.estimateId,
-        "derived_from",
-        1 - estimateItem.uncertainty,
-        estimateItem.evidenceRefs,
-      ),
-    );
+    edges.push(edge(`${observationId}->${estimateItem.estimateId}`, observationId, estimateItem.estimateId, "derived_from", 1 - estimateItem.uncertainty, estimateItem.evidenceRefs));
   }
 
   if (input.matchup) {
     const matchupId = `tennis:matchup:${input.matchup.serverParticipantId}:${input.matchup.receiverParticipantId}`;
-    nodes.push(
-      node(
-        matchupId,
-        "inference",
-        "Tennis matchup model",
-        1 - input.matchup.serveReturnEdge.uncertainty,
-        input.matchup.serveReturnEdge.uncertainty,
-        input.matchup.evidenceRefs,
-      ),
-    );
+    nodes.push(node(matchupId, "inference", "Tennis matchup model", 1 - input.matchup.serveReturnEdge.uncertainty, input.matchup.serveReturnEdge.uncertainty, input.matchup.evidenceRefs));
     for (const profile of input.profiles) {
-      const refs = profile.evidenceRefs;
       const related = estimates.filter((item) => item.estimateId.startsWith(`tennis:${profile.playerId}:`));
       for (const item of related) {
-        edges.push(edge(`${item.estimateId}->${matchupId}`, item.estimateId, matchupId, "supports", 1 - item.uncertainty, refs));
+        edges.push(edge(`${item.estimateId}->${matchupId}`, item.estimateId, matchupId, "supports", 1 - item.uncertainty, profile.evidenceRefs));
       }
     }
   }
 
   for (const scenario of input.scenarios ?? []) {
     const scenarioId = `scenario:${scenario.scenarioId}`;
-    nodes.push(
-      node(
-        scenarioId,
-        "scenario",
-        scenario.intervention.objective,
-        scenario.evidenceRefs.length ? 0.6 : 0,
-        scenario.evidenceRefs.length ? 0.4 : 1,
-        scenario.evidenceRefs,
-      ),
-    );
+    nodes.push(node(scenarioId, "scenario", scenario.intervention.objective, scenario.evidenceRefs.length ? 0.6 : 0, scenario.evidenceRefs.length ? 0.4 : 1, scenario.evidenceRefs));
     for (const response of scenario.opponentResponses) {
       const responseId = `${scenarioId}:response:${response.responseId}`;
       nodes.push(node(responseId, "hypothesis", response.rationale, 1 - response.uncertainty, response.uncertainty, response.evidenceRefs));
-      edges.push(edge(`${scenarioId}->${responseId}`, scenarioId, responseId, "requires", response.relativeWeight / Math.max(1, response.relativeWeight), response.evidenceRefs));
+      edges.push(edge(`${scenarioId}->${responseId}`, scenarioId, responseId, "requires", clamp(response.relativeWeight / 1.0), response.evidenceRefs));
     }
     const evaluation = policyEvaluations.find((item) => item.policyId === scenario.scenarioId);
     if (evaluation) {
@@ -206,18 +136,13 @@ export function buildTennisUniversalIntelligence(
   }
 
   const unknowns = input.epistemic?.unknowns ?? [];
-  for (const unknown of unknowns) {
-    nodes.push(node(unknown.id, "unknown", unknown.statement, 0, 1, unknown.evidenceRefs));
-  }
+  for (const unknown of unknowns) nodes.push(node(unknown.id, "unknown", unknown.statement, 0, 1, unknown.evidenceRefs));
 
   const evidenceGraph = buildEvidenceGraph({
     graphId: `tennis-universal:${input.stateSignature}`,
     nodes,
     edges,
-    provenance: [
-      ...(input.epistemic?.provenance.evidenceRefs ?? []),
-      ...input.profiles.flatMap((profile) => profile.evidenceRefs),
-    ],
+    engineVersion: "tennis-universal-intelligence-v1",
   });
 
   return {
@@ -225,9 +150,6 @@ export function buildTennisUniversalIntelligence(
     policyEvaluations,
     evidenceGraph,
     unresolvedQuestions: unknowns.map((item) => item.statement),
-    uncertainty: clamp(
-      (input.epistemic?.uncertainty ?? 0) * 0.5 +
-      evidenceGraph.uncertainty * 0.5,
-    ),
+    uncertainty: clamp((input.epistemic?.uncertainty ?? 0) * 0.5 + evidenceGraph.uncertainty * 0.5),
   };
 }
