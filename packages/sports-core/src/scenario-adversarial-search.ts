@@ -1,5 +1,6 @@
 import type { ScenarioEvaluation } from "./scenario-evaluation";
 import type { ScenarioSearchNode } from "./scenario-search-world-model";
+import { boundScenarioNode, canPruneForMaximization, canPruneForMinimization, rankBoundedNodes } from "./scenario-bound-engine";
 
 export type AdversarialRole = "coach" | "opponent";
 
@@ -7,6 +8,7 @@ export interface AdversarialSearchConfig {
   depth: number;
   maxChildren: number;
   resilienceWeight?: number;
+  allowHeuristicBoundPruning?: boolean;
 }
 
 export interface AdversarialSearchNode {
@@ -23,6 +25,7 @@ export interface AdversarialSearchResult {
   strategy: "minimax" | "alpha-beta";
   nodesVisited: number;
   prunedBranches: number;
+  boundPrunedBranches: number;
 }
 
 function clamp01(value: number): number {
@@ -49,8 +52,10 @@ export function minimaxScenarioSearch(
   const maxDepth = Math.max(0, Math.floor(config.depth));
   const resilienceWeight = clamp01(config.resilienceWeight ?? 0.5);
   const maxChildren = Math.max(1, Math.floor(config.maxChildren));
+  const allowHeuristicBoundPruning = config.allowHeuristicBoundPruning ?? false;
   let nodesVisited = 0;
   let prunedBranches = 0;
+  let boundPrunedBranches = 0;
 
   function visit(node: AdversarialSearchNode, depth: number, alpha: number, beta: number): { value: number; pv: string[]; reached: number } {
     nodesVisited += 1;
@@ -60,11 +65,26 @@ export function minimaxScenarioSearch(
     }
 
     const maximizing = node.role === "coach";
+    const ranked = rankBoundedNodes(
+      children.map((child) => boundScenarioNode(child.node)),
+      node.role,
+    ).map((bounded) => children.find((child) => child.node.nodeId === bounded.node.nodeId)!)
+      .filter(Boolean);
     let bestValue = maximizing ? -Infinity : Infinity;
     let bestChild: AdversarialSearchNode | undefined;
     let bestResult: { value: number; pv: string[]; reached: number } | undefined;
 
-    for (const child of children) {
+    for (const child of ranked) {
+      const bounded = boundScenarioNode(child.node);
+      const boundPruned = maximizing
+        ? canPruneForMaximization(bounded, bestValue, allowHeuristicBoundPruning)
+        : canPruneForMinimization(bounded, bestValue, allowHeuristicBoundPruning);
+
+      if (boundPruned) {
+        boundPrunedBranches += 1;
+        continue;
+      }
+
       const result = visit(child, depth + 1, alpha, beta);
       const better = maximizing
         ? result.value > bestValue || (result.value === bestValue && child.node.nodeId.localeCompare(bestChild?.node.nodeId ?? "") < 0)
@@ -79,13 +99,13 @@ export function minimaxScenarioSearch(
       else beta = Math.min(beta, bestValue);
 
       if (beta <= alpha) {
-        prunedBranches += children.length - children.indexOf(child) - 1;
+        prunedBranches += ranked.length - ranked.indexOf(child) - 1;
         break;
       }
     }
 
     return {
-      value: bestValue,
+      value: bestValue === -Infinity || bestValue === Infinity ? valueOf(node.node.evaluation, resilienceWeight) : bestValue,
       pv: [node.node.nodeId, ...(bestResult?.pv ?? [])],
       reached: bestResult?.reached ?? depth,
     };
@@ -100,5 +120,6 @@ export function minimaxScenarioSearch(
     strategy: "alpha-beta",
     nodesVisited,
     prunedBranches,
+    boundPrunedBranches,
   };
 }
