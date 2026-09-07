@@ -7,6 +7,11 @@ import {
   type ScenarioSearchNode,
   type ScenarioSearchWorldModel,
 } from "./scenario-search-world-model";
+import {
+  chooseScenarioSearchStrategy,
+  selectScenarioSearchNodes,
+  type ScenarioSearchStrategy,
+} from "./scenario-search-strategy";
 import type {
   ScenarioCandidate,
   ScenarioEvaluation,
@@ -18,11 +23,15 @@ export interface IterativeScenarioExplorationConfig {
   maxRounds: number;
   maxNodes: number;
   stagnationLimit: number;
+  strategy?: ScenarioSearchStrategy;
+  beamWidth?: number;
+  explorationConstant?: number;
 }
 
 export interface IterativeScenarioExplorationRound {
   round: number;
   action: ScenarioSearchAction;
+  strategy: ScenarioSearchStrategy;
   activeNodeId: string;
   scenarioIds: string[];
   improved: boolean;
@@ -102,10 +111,32 @@ export function runIterativeScenarioExploration(
     const action = chooseScenarioSearchAction(worldModel);
     if (action === "stop") break;
 
+    const strategy = config.strategy ?? chooseScenarioSearchStrategy(worldModel);
+    const selection = selectScenarioSearchNodes(worldModel, {
+      strategy,
+      beamWidth: config.beamWidth,
+      explorationConstant: config.explorationConstant,
+      maxNodes,
+    });
+    const selectedScenarioIds = new Set(
+      selection.selectedNodeIds
+        .map((nodeId) => worldModel.nodes.find((node) => node.nodeId === nodeId)?.scenarioId)
+        .filter((scenarioId): scenarioId is string => Boolean(scenarioId)),
+    );
+
     const candidates = request.candidates.filter((candidate) => {
       const existing = worldModel.nodes.find((node) => node.scenarioId === candidate.scenarioId);
+      if (selectedScenarioIds.size) return selectedScenarioIds.has(candidate.scenarioId);
       return action === "replay" || !existing || existing.status !== "evaluated";
     });
+
+    if (!candidates.length) {
+      const fallback = request.candidates.find((candidate) => {
+        const existing = worldModel.nodes.find((node) => node.scenarioId === candidate.scenarioId);
+        return action === "replay" || !existing || existing.status !== "evaluated";
+      });
+      if (fallback) candidates.push(fallback);
+    }
 
     if (!candidates.length) {
       worldModel = updateScenarioSearchWorldModel(worldModel, {
@@ -115,7 +146,7 @@ export function runIterativeScenarioExploration(
           depth: worldModel.nodes.find((node) => node.nodeId === worldModel.activeNodeId)?.depth ?? 0,
           status: "unknown",
           visits: 0,
-          notes: "no unexplored candidate available",
+          notes: "no candidate selected by search strategy",
         },
         round,
         improved: false,
@@ -152,6 +183,7 @@ export function runIterativeScenarioExploration(
     rounds.push({
       round,
       action,
+      strategy,
       activeNodeId: worldModel.activeNodeId,
       scenarioIds: candidates.map((candidate) => candidate.scenarioId).sort(),
       improved,
