@@ -16,6 +16,12 @@ export interface CoachExplorationReceipt {
   simulationBudget?: number;
   evaluatorVersion: string;
   serviceVersion: string;
+  searchModelId?: string;
+  searchVersion?: number;
+  searchRoundsCompleted?: number;
+  searchStagnationRounds?: number;
+  searchNextAction?: string;
+  searchStopReason?: string;
   evidenceIds: EvidenceId[];
   deterministicKey: string;
 }
@@ -59,6 +65,12 @@ export function buildCoachExplorationReceipt(
     `paretoScenarioIds=${paretoScenarioIds.join(",")}`,
     `simulationSeeds=${simulationSeeds.join(",")}`,
     `simulationBudget=${request.simulationBudget ?? ""}`,
+    `searchModelId=${result.search?.modelId ?? ""}`,
+    `searchVersion=${result.search?.version ?? ""}`,
+    `searchRoundsCompleted=${result.search?.roundsCompleted ?? ""}`,
+    `searchStagnationRounds=${result.search?.stagnationRounds ?? ""}`,
+    `searchNextAction=${result.search?.nextAction ?? ""}`,
+    `searchStopReason=${result.search?.stopReason ?? ""}`,
     `evidenceIds=${evidenceIds.join(",")}`,
   ].join("|");
 
@@ -77,6 +89,12 @@ export function buildCoachExplorationReceipt(
     simulationBudget: request.simulationBudget,
     evaluatorVersion,
     serviceVersion: result.provenance.serviceVersion,
+    searchModelId: result.search?.modelId,
+    searchVersion: result.search?.version,
+    searchRoundsCompleted: result.search?.roundsCompleted,
+    searchStagnationRounds: result.search?.stagnationRounds,
+    searchNextAction: result.search?.nextAction,
+    searchStopReason: result.search?.stopReason,
     evidenceIds,
     deterministicKey: canonical,
   };
