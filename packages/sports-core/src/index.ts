@@ -30,5 +30,8 @@ export interface SportAdapter { metadata(): SportMetadata; capabilities(): Sport
 export * from "./coaching-intelligence";
 export * from "./coach-explanation";
 export * from "./coach-command";
+export * from "./coach-exploration-receipt";
 export * from "./evidence-graph";
 export * from "./scenario-evaluation";
+export * from "./scenario-exploration";
+export * from "./scenario-search-world-model";

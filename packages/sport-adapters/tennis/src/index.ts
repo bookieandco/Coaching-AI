@@ -99,3 +99,5 @@ export const tennisAdapter = createTennisAdapter();
 
 export { buildTennisUniversalIntelligence } from "./universal-intelligence";
 export type { TennisUniversalIntelligenceInput, TennisUniversalIntelligenceResult } from "./universal-intelligence";
+export { createTennisScenarioExplorationService, describeTennisScenarioExplorationService } from "./universal-scenario-exploration";
+export type { TennisScenarioExplorationServiceConfig } from "./universal-scenario-exploration";
