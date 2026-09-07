@@ -5,6 +5,7 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./coaching-intelligence": "./src/coaching-intelligence.ts"
+    "./coaching-intelligence": "./src/coaching-intelligence.ts",
+    "./scenario-evaluation": "./src/scenario-evaluation.ts"
   }
 }
