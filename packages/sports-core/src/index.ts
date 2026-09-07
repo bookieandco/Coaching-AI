@@ -1,40 +1,12 @@
 export type SportCode =
-  | "basketball"
-  | "american_football"
-  | "soccer"
-  | "baseball"
-  | "ice_hockey"
-  | "tennis"
-  | "volleyball"
-  | "rugby"
-  | "cricket"
-  | "golf"
-  | "lacrosse"
-  | "combat_sports"
-  | "motorsports"
-  | "other";
-
+  | "basketball" | "american_football" | "soccer" | "baseball" | "ice_hockey"
+  | "tennis" | "volleyball" | "rugby" | "cricket" | "golf" | "lacrosse"
+  | "combat_sports" | "motorsports" | "other";
 export type Id<T extends string> = string & { readonly __brand: T };
-export type GameId = Id<"GameId">;
-export type TeamId = Id<"TeamId">;
-export type PlayerId = Id<"PlayerId">;
-export type EventId = Id<"EventId">;
-export type ScenarioId = Id<"ScenarioId">;
-export type EvidenceId = Id<"EvidenceId">;
-
-export interface EvidenceRef {
-  evidenceId: EvidenceId;
-  sourceType: "video" | "tracking" | "official_feed" | "manual" | "derived" | "other";
-  locator?: string;
-  observedAt?: string;
-}
-
-export interface Participant {
-  participantId: string;
-  kind: "team" | "player" | "individual" | "pair" | "vehicle" | "other";
-  displayName: string;
-}
-
+export type GameId = Id<"GameId">; export type TeamId = Id<"TeamId">; export type PlayerId = Id<"PlayerId">;
+export type EventId = Id<"EventId">; export type ScenarioId = Id<"ScenarioId">; export type EvidenceId = Id<"EvidenceId">;
+export interface EvidenceRef { evidenceId: EvidenceId; sourceType: "video" | "tracking" | "official_feed" | "manual" | "derived" | "other"; locator?: string; observedAt?: string; }
+export interface Participant { participantId: string; kind: "team" | "player" | "individual" | "pair" | "vehicle" | "other"; displayName: string; }
 export interface GameClock { mode: "timed" | "untimed" | "round_based" | "turn_based" | "continuous"; elapsedMs?: number; remainingMs?: number; period?: number; label?: string; }
 export interface ScoreState { values: Record<string, number | string>; leaderParticipantId?: string; }
 export interface ControlState { mode: "possession" | "turn" | "rally" | "shared" | "none"; controllerParticipantId?: string; }
@@ -55,8 +27,7 @@ export interface ScoreContext { state: GameState; action: Action; }
 export interface ScoreTransition { delta: Record<string, number | string>; }
 export interface TerminalResult { terminal: boolean; reason?: string; winnerParticipantId?: string; }
 export interface SportAdapter { metadata(): SportMetadata; capabilities(): SportCapabilities; createInitialState(input: InitialStateInput): GameState; normalizeEvent(input: RawSportEvent): Event; normalizeAction(input: RawSportAction): Action; applyEvent(state: GameState, event: Event): StateTransition; applyAction(state: GameState, action: Action): StateTransition; validateState(state: GameState): ValidationResult; legalActions(context: ActionContext): ActionDefinition[]; scoreTransition(context: ScoreContext): ScoreTransition; gamePhase(state: GameState): GamePhase; controlState(state: GameState): ControlState; isTerminal(state: GameState): TerminalResult; }
-
-export type { CoachingEvidenceLabel, CoachingEvidenceLevel, CoachingEstimate, HierarchicalEvidence, ConfidenceCalibrationRecord, ConfidenceCalibrationSummary, ReferenceMotionComparison, CoachingPolicyEvaluation } from "./coaching-intelligence";
-export { estimateBetaBinomial, estimateHierarchicalRate, calibrateConfidence, compareReferenceMotion, buildCoachingPolicyEvaluation } from "./coaching-intelligence";
-export type { CoachExplanationKind, CoachExplanationItem, CoachExplanationReadModel } from "./coach-explanation";
-export { buildCoachExplanationReadModel } from "./coach-explanation";
+export * from "./coaching-intelligence";
+export * from "./coach-explanation";
+export * from "./coach-command";
+export * from "./evidence-graph";
