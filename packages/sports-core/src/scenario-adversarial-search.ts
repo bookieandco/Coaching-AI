@@ -20,7 +20,9 @@ export interface AdversarialSearchResult {
   value: number;
   principalVariation: string[];
   depthReached: number;
-  strategy: "minimax";
+  strategy: "minimax" | "alpha-beta";
+  nodesVisited: number;
+  prunedBranches: number;
 }
 
 function clamp01(value: number): number {
@@ -47,32 +49,56 @@ export function minimaxScenarioSearch(
   const maxDepth = Math.max(0, Math.floor(config.depth));
   const resilienceWeight = clamp01(config.resilienceWeight ?? 0.5);
   const maxChildren = Math.max(1, Math.floor(config.maxChildren));
+  let nodesVisited = 0;
+  let prunedBranches = 0;
 
-  function visit(node: AdversarialSearchNode, depth: number): { value: number; pv: string[]; reached: number } {
+  function visit(node: AdversarialSearchNode, depth: number, alpha: number, beta: number): { value: number; pv: string[]; reached: number } {
+    nodesVisited += 1;
     const children = stableChildren(node.children, maxChildren);
     if (depth >= maxDepth || !children.length) {
       return { value: valueOf(node.node.evaluation, resilienceWeight), pv: [node.node.nodeId], reached: depth };
     }
 
-    const results = children.map((child) => ({ child, result: visit(child, depth + 1) }));
     const maximizing = node.role === "coach";
-    results.sort((a, b) => maximizing
-      ? b.result.value - a.result.value || a.child.node.nodeId.localeCompare(b.child.node.nodeId)
-      : a.result.value - b.result.value || a.child.node.nodeId.localeCompare(b.child.node.nodeId));
-    const selected = results[0];
+    let bestValue = maximizing ? -Infinity : Infinity;
+    let bestChild: AdversarialSearchNode | undefined;
+    let bestResult: { value: number; pv: string[]; reached: number } | undefined;
+
+    for (const child of children) {
+      const result = visit(child, depth + 1, alpha, beta);
+      const better = maximizing
+        ? result.value > bestValue || (result.value === bestValue && child.node.nodeId.localeCompare(bestChild?.node.nodeId ?? "") < 0)
+        : result.value < bestValue || (result.value === bestValue && child.node.nodeId.localeCompare(bestChild?.node.nodeId ?? "") < 0);
+      if (better) {
+        bestValue = result.value;
+        bestChild = child;
+        bestResult = result;
+      }
+
+      if (maximizing) alpha = Math.max(alpha, bestValue);
+      else beta = Math.min(beta, bestValue);
+
+      if (beta <= alpha) {
+        prunedBranches += children.length - children.indexOf(child) - 1;
+        break;
+      }
+    }
+
     return {
-      value: selected.result.value,
-      pv: [node.node.nodeId, ...selected.result.pv],
-      reached: selected.result.reached,
+      value: bestValue,
+      pv: [node.node.nodeId, ...(bestResult?.pv ?? [])],
+      reached: bestResult?.reached ?? depth,
     };
   }
 
-  const result = visit(root, 0);
+  const result = visit(root, 0, -Infinity, Infinity);
   return {
     nodeId: root.node.nodeId,
     value: result.value,
     principalVariation: result.pv,
     depthReached: result.reached,
-    strategy: "minimax",
+    strategy: "alpha-beta",
+    nodesVisited,
+    prunedBranches,
   };
 }
