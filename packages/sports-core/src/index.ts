@@ -36,3 +36,4 @@ export * from "./scenario-evaluation";
 export * from "./scenario-exploration";
 export * from "./scenario-search-world-model";
 export * from "./scenario-exploration-iteration";
+export * from "./scenario-search-strategy";
