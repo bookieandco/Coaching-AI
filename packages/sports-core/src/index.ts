@@ -34,3 +34,4 @@ export * from "./coach-exploration-receipt";
 export * from "./evidence-graph";
 export * from "./scenario-evaluation";
 export * from "./scenario-exploration";
+export * from "./scenario-search-world-model";
