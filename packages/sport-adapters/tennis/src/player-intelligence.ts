@@ -59,7 +59,7 @@ export function buildTennisPlayerProfile(input: TennisIntelligenceInput): Tennis
   const transitionShots = playerShots.filter((s) => s.zone === "transition");
   const baselineShots = playerShots.filter((s) => s.zone === "baseline");
   const returnWins = rallies.filter((r) => r.shots.some((s) => s.actorParticipantId === input.playerId && s.shotType === "return") && r.pointWinnerParticipantId === input.playerId);
-  const break = input.breakPointRallies ?? [];
+  const breakRallies = input.breakPointRallies ?? [];
   const tb = input.tiebreakRallies ?? [];
 
   return {
@@ -88,7 +88,7 @@ export function buildTennisPlayerProfile(input: TennisIntelligenceInput): Tennis
       baselineRate: estimateRate(baselineShots.length, playerShots.length, "court.baseline_rate", refs),
     },
     pressure: {
-      breakPointWinRate: break.length ? estimateRate(break.filter((r) => r.pointWinnerParticipantId === input.playerId).length, break.length, "pressure.break_point_win_rate", shotEvidence(break.flatMap((r) => r.shots))) : undefined,
+      breakPointWinRate: breakRallies.length ? estimateRate(breakRallies.filter((r) => r.pointWinnerParticipantId === input.playerId).length, breakRallies.length, "pressure.break_point_win_rate", shotEvidence(breakRallies.flatMap((r) => r.shots))) : undefined,
       tiebreakPointWinRate: tb.length ? estimateRate(tb.filter((r) => r.pointWinnerParticipantId === input.playerId).length, tb.length, "pressure.tiebreak_point_win_rate", shotEvidence(tb.flatMap((r) => r.shots))) : undefined,
     },
     evidenceRefs: refs,
