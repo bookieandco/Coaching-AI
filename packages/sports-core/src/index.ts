@@ -209,3 +209,24 @@ export {
   compareReferenceMotion,
   buildCoachingPolicyEvaluation,
 } from "./coaching-intelligence";
+
+export type {
+  SportsPredictionSubjectKind,
+  SportsPredictionUse,
+  CalibrationStatus,
+  ResolutionType,
+  SportsPredictionModelIdentity,
+  SportsPredictionOutcome,
+  SportsPredictionDistribution,
+  SportsPredictionCalibration,
+  SportsPredictionUncertainty,
+  SportsPredictionResolutionContract,
+  SportsPredictionProvenance,
+  SportsPredictionAuthority,
+  SportsPredictionEnvelope,
+} from "./sports-prediction-envelope";
+
+export {
+  assertSportsPredictionEnvelope,
+  buildSportsPredictionEnvelope,
+} from "./sports-prediction-envelope";
