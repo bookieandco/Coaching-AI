@@ -67,11 +67,24 @@ function validInput() {
 describe("SPORT-PRED-01 canonical envelope", () => {
   it("creates an immutable intelligence-only envelope", () => {
     const envelope = buildSportsPredictionEnvelope(validInput());
+    assert.equal(envelope.schemaVersion, "SPORT-PRED-01");
     assert.equal(envelope.authority.decision, "INTELLIGENCE_ONLY");
     assert.equal(envelope.authority.bettingExecution, "NONE");
     assert.equal(envelope.authority.financialExecution, "NONE");
     assert.ok(Object.isFrozen(envelope));
     assert.ok(Object.isFrozen(envelope.distribution.outcomes));
+  });
+
+  it("rejects unsupported schema versions", () => {
+    const envelope = buildSportsPredictionEnvelope(validInput());
+    assert.throws(
+      () =>
+        assertSportsPredictionEnvelope({
+          ...envelope,
+          schemaVersion: "SPORT-PRED-99" as never,
+        }),
+      /SCHEMA_VERSION_UNSUPPORTED/,
+    );
   });
 
   it("rejects probability mass that does not sum to one", () => {
