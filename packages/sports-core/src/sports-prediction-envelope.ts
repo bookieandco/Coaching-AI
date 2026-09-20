@@ -1,5 +1,7 @@
 import type { EvidenceRef, GameId, SportCode } from "./index";
 
+export const SPORTS_PREDICTION_ENVELOPE_SCHEMA_VERSION = "SPORT-PRED-01" as const;
+
 export type SportsPredictionSubjectKind =
   | "game"
   | "match"
@@ -86,6 +88,7 @@ export interface SportsPredictionAuthority {
 }
 
 export interface SportsPredictionEnvelope {
+  schemaVersion: typeof SPORTS_PREDICTION_ENVELOPE_SCHEMA_VERSION;
   envelopeId: string;
   sport: SportCode;
   subject: Readonly<{
@@ -128,6 +131,10 @@ function assertUnitInterval(value: number, field: string): void {
 export function assertSportsPredictionEnvelope(
   envelope: SportsPredictionEnvelope,
 ): void {
+  if (envelope.schemaVersion !== SPORTS_PREDICTION_ENVELOPE_SCHEMA_VERSION) {
+    throw new Error("SPORT_PRED_SCHEMA_VERSION_UNSUPPORTED");
+  }
+
   assertNonEmpty(envelope.envelopeId, "envelope_id");
   assertNonEmpty(envelope.subject.subjectId, "subject_id");
   assertIsoTimestamp(envelope.informationCutoff, "information_cutoff");
@@ -226,10 +233,11 @@ export function assertSportsPredictionEnvelope(
 }
 
 export function buildSportsPredictionEnvelope(
-  input: Omit<SportsPredictionEnvelope, "authority">,
+  input: Omit<SportsPredictionEnvelope, "authority" | "schemaVersion">,
 ): SportsPredictionEnvelope {
   const envelope: SportsPredictionEnvelope = Object.freeze({
     ...input,
+    schemaVersion: SPORTS_PREDICTION_ENVELOPE_SCHEMA_VERSION,
     subject: Object.freeze({ ...input.subject }),
     model: Object.freeze({ ...input.model }),
     distribution: Object.freeze({
