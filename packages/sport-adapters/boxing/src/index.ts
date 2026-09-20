@@ -81,7 +81,7 @@ export const boxingAdapter: SportAdapter = {
         tacticalMode: {},
         clinch: false,
         knockdowns: {},
-      } satisfies BoxingFightState & Record<string, unknown>,
+      } satisfies Omit<BoxingFightState, "roundState"> & Record<string, unknown>,
       evidenceRefs: [],
       stateVersion: 0,
     };
