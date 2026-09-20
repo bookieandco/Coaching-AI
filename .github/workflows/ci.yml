@@ -1,0 +1,42 @@
+name: Coaching AI CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Type-check and test
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install verification toolchain
+        run: npm install --no-save --no-package-lock typescript@5.9.3 tsx@4.20.6 @types/node@20
+
+      - name: Type-check repository
+        run: npx tsc -p tsconfig.json --noEmit
+
+      - name: Run Node tests
+        shell: bash
+        run: |
+          mapfile -t tests < <(find packages -name '*.test.ts' -type f | sort)
+          if [ "${#tests[@]}" -eq 0 ]; then
+            echo "No tests found"
+            exit 1
+          fi
+          node --import tsx --test "${tests[@]}"
