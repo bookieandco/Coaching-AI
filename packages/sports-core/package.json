@@ -5,6 +5,7 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./coaching-intelligence": "./src/coaching-intelligence.ts"
+    "./coaching-intelligence": "./src/coaching-intelligence.ts",
+    "./sports-prediction-envelope": "./src/sports-prediction-envelope.ts"
   }
 }
