@@ -34,6 +34,7 @@ The envelope stops at both boundaries.
 
 A valid `SportsPredictionEnvelope` binds:
 
+- the immutable transport schema identifier `SPORT-PRED-01`;
 - sport and subject identity;
 - information cutoff and issue time;
 - model, model version, methodology version, and feature snapshot hash;
@@ -45,6 +46,10 @@ A valid `SportsPredictionEnvelope` binds:
 - input/evidence provenance hashes;
 - allowed intelligence uses;
 - an immutable no-execution authority block.
+
+## Schema invariant
+
+The producer stamps every envelope with `schemaVersion = SPORT-PRED-01`. Consumers must reject unsupported versions rather than guessing how a changed producer schema maps into downstream research state.
 
 ## Probability invariant
 
