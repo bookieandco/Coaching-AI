@@ -227,6 +227,7 @@ export type {
 } from "./sports-prediction-envelope";
 
 export {
+  SPORTS_PREDICTION_ENVELOPE_SCHEMA_VERSION,
   assertSportsPredictionEnvelope,
   buildSportsPredictionEnvelope,
 } from "./sports-prediction-envelope";
